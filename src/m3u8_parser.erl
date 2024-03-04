@@ -5,6 +5,7 @@
 %%%
 %%% @end
 %%% Created : 04. Nov 2019 11:30
+%%% Reworked : 04. Mar 2024 22:56
 %%%-------------------------------------------------------------------
 -module(m3u8_parser).
 -author("Ralf Thomas Pietsch <ratopi@abwesend.de>").
@@ -12,167 +13,96 @@
 %% API
 -export([parse/1]).
 
-parse(Bin) ->
-	{ok, Line, Rest} = read_line(Bin),
-	case Line of
-		<<"#EXTM3U">> ->
-			parse(#{}, Rest, []);
-		_ ->
-			{error, missing_header}
-	end.
+%%%===================================================================
+%%% API
+%%%===================================================================
 
+-spec(parse(Bin :: binary()) -> [{term(), map()}]).
+parse(Bin) when is_binary(Bin) ->
+	parse(Bin, []).
 
-parse(Map, Bin, Acc) ->
-	case read_line(Bin) of
+%%%===================================================================
+%%% Internal functions
+%%%===================================================================
+
+parse(Bin, Acc) ->
+	case read_line(Bin, <<>>) of
+		{ok, Line, Rest} ->
+
+			case Line of
+				<<"">> ->
+					parse(Rest, Acc);
+
+				<<"#EXT", _/binary>> ->
+					Entry = {_, _} = parse_ext_line(Line),
+					parse(Rest, [Entry | Acc]);
+
+				_ ->
+					[{LastId, LastMap} | LastAccRest] = Acc,
+					NewLastMap = maps:put(url, Line, LastMap),
+					parse(Rest, [{LastId, NewLastMap} | LastAccRest])
+			end;
+
 		eof ->
-			% TODO : Check if Map is empty !
-			{ok, lists:reverse(Acc)};
-		{ok, Line = <<$#, _/binary>>, Rest} ->
-			{ok, Directive, Parameters} = parse_directive(Line),
-			NewMap = maps:put(Directive, Parameters, Map),
-			parse(NewMap, Rest, Acc);
-		{ok, URL, Rest} ->
-			NewMap = maps:put(url, URL, Map),
-			parse(#{}, Rest, [NewMap | Acc])
+			lists:reverse(Acc)
 	end.
 
+% ---
+
+parse_ext_line(Line = <<"#EXT", _/binary>>) ->
+	case get_type(Line) of
+		{Type, Rest} ->
+			{Type, parse_csv(Type, Rest, #{})}
+	end.
 
 % ---
 
-parse_directive(Line) ->
-	{ok, Name, Parameter} = parse_directive(start, Line).
+get_type(Line) ->
+	{Type, Rest} = get_type(Line, <<>>),
+	{transform_type(Type), Rest}.
 
 
-parse_directive(start, <<"#EXT-X-STREAM-INF:", Rest/binary>>) ->
-	{ok, Name, ParameterString} = parse_directive({parameter, 'ext-x-stream-inf', <<>>}, Rest),
-	{ok, Name, convert_parameter(Name, ParameterString)};
+get_type(<<>>, Type) ->
+	{Type, <<>>};
 
-parse_directive(start, <<"#EXT-X-VERSION:", Bin/binary>>) ->
-	{ok, 'ext-x-version', Bin};
+get_type(<<$:, Rest/binary>>, Type) ->
+	{Type, Rest};
 
-parse_directive(start, <<"#EXT-X-TARGETDURATION:", Bin/binary>>) ->
-	{N, <<>>} = string:to_integer(Bin),
-	{ok, 'ext-x-targetduration', N};
-
-parse_directive(start, <<"#EXT-X-MEDIA-SEQUENCE:", Bin/binary>>) ->
-	{N, <<>>} = string:to_integer(Bin),
-	{ok, 'ext-x-media-sequence', N};
-
-parse_directive(start, <<"#EXT-X-PROGRAM-DATE-TIME:", Bin/binary>>) ->
-	{ok, 'ext-x-program-date-time', Bin};
-
-parse_directive(start, <<"#EXTINF:", Bin/binary>>) ->
-	{N, _} = string:to_float(Bin),
-	{ok, 'extinf', #{runtime => N}};
-
-parse_directive(start, <<$#, Rest/binary>>) ->
-	parse_directive({name, <<"">>}, Rest);
-
-parse_directive({name, Name}, <<>>) ->
-	{ok, Name, nil};
-
-parse_directive({name, Name}, <<":", Rest/binary>>) ->
-	parse_directive({parameter, Name, <<"">>}, Rest);
-
-parse_directive({name, Name}, <<Letter, Rest/binary>>) when Letter >= 32, Letter =/= 127 ->
-	parse_directive({name, <<Name/binary, Letter>>}, Rest);
-
-parse_directive({parameter, Name, Parameter}, <<>>) ->
-	{ok, Name, Parameter};
-
-parse_directive({parameter, Name, Parameter}, <<Letter, Rest/binary>>) when Letter >= 32, Letter =/= 127 ->
-	parse_directive({parameter, Name, <<Parameter/binary, Letter>>}, Rest).
-
+get_type(<<Letter, Rest/binary>>, Type) ->
+	get_type(Rest, <<Type/binary, Letter>>).
 
 % ---
 
-convert_parameter(Type = 'ext-x-stream-inf', ParameterString) ->
-	maps:from_list(
-		lists:map(
-			fun(E = {_, _}) ->
-				map_key(Type, E)
-			end,
-			maps:to_list(
-				parse_csv(ParameterString)
-			)
-		)
-	);
-
-convert_parameter(_, P) ->
-	P.
-
-% ---
-
-map_key('ext-x-stream-inf', {<<"CODECS">>, Value}) ->
-	{'codecs', string:split(Value, <<",">>)};
-map_key('ext-x-stream-inf', {<<"BANDWIDTH">>, Value}) ->
-	{'bandwidth', n_only(string:to_integer(Value))};
-map_key('ext-x-stream-inf', {<<"AVERAGE-BANDWIDTH">>, Value}) ->
-	{'average-bandwidth', n_only(string:to_integer(Value))};
-map_key('ext-x-stream-inf', {<<"FRAME-RATE">>, Value}) ->
-	{'frame-rate', n_only(string:to_float(Value))};
-map_key('ext-x-stream-inf', {<<"RESOLUTION">>, Value}) ->
-	[A, B] = string:split(Value, <<"x">>),
-	W = n_only(string:to_integer(A)),
-	H = n_only(string:to_integer(B)),
-	{'resolution', [W, H]};
-% map_key('ext-x-stream-inf', {<<"PROGRAM-ID">>, Value}) ->
-%    {'program-id', Value};
-map_key(_, X) -> X.
-
-% ---
-
-n_only({N, <<>>}) -> N;
-n_only(X) -> {error, {n_only, X}}.
-
-% ---
-
-parse_csv(Bin) ->
-	parse_csv(Bin, #{}).
-
-
-parse_csv(<<>>, Map) ->
+parse_csv(_Type, <<>>, Map) ->
 	Map;
 
-parse_csv(Bin, Map) ->
-	{ok, Key, <<Rest1/binary>>} = parse_get_string(standard, $=, Bin, <<>>),
-	{ok, Value, <<Rest2/binary>>} = parse_get_string(standard, $,, Rest1, <<>>),
-	parse_csv(
-		Rest2,
-		maps:put(Key, Value, Map)
-	).
+parse_csv(Type, Bin, Map) ->
+	{ok, Key, <<Rest1/binary>>} = parse_csv_string(standard, $=, Bin, <<>>),
+	{ok, Value, <<Rest2/binary>>} = parse_csv_string(standard, $,, Rest1, <<>>),
+	{K, V} = transform_entry(Type, Key, Value),
+	parse_csv(Type, Rest2, maps:put(K, V, Map)).
 
 % ---
 
-parse_get_string(standard, Delimiter, <<$", Rest/binary>>, <<>>) ->
-	parse_get_string(in_string, Delimiter, Rest, <<>>);
+parse_csv_string(standard, Delimiter, <<$", Rest/binary>>, <<>>) ->
+	parse_csv_string(in_string, Delimiter, Rest, <<>>);
 
-parse_get_string(in_string, Delimiter, <<$", Rest/binary>>, Value) ->
-	parse_get_string(standard, Delimiter, Rest, Value);
+parse_csv_string(in_string, Delimiter, <<$", Rest/binary>>, Value) ->
+	parse_csv_string(standard, Delimiter, Rest, Value);
 
-parse_get_string(standard, _Delimiter, <<>>, Value) ->
+parse_csv_string(standard, _Delimiter, <<>>, Value) ->
 	{ok, Value, <<>>};
 
-parse_get_string(standard, Delimiter, <<Delimiter, Rest/binary>>, Value) ->
+parse_csv_string(standard, Delimiter, <<Delimiter, Rest/binary>>, Value) ->
 	{ok, Value, Rest};
 
-parse_get_string(Mode, Delimiter, <<Letter, Rest/binary>>, Value) ->
-	parse_get_string(Mode, Delimiter, Rest, <<Value/binary, Letter>>).
+parse_csv_string(Mode, Delimiter, <<Letter, Rest/binary>>, Value) ->
+	parse_csv_string(Mode, Delimiter, Rest, <<Value/binary, Letter>>).
 
 % ---
 
-read_line(<<>>) ->
+read_line(<<>>, <<>>) ->
 	eof;
-
-read_line(Bin) ->
-	case read_line(Bin, <<>>) of
-		{ok, <<>>, Rest} ->
-			read_line(Rest);
-		R ->
-			R
-	end.
-
-
 
 read_line(<<>>, Line) ->
 	{ok, Line, <<>>};
@@ -185,3 +115,57 @@ read_line(<<"\r", Rest/binary>>, Line) ->
 
 read_line(<<Letter, Rest/binary>>, Line) when Letter >= 32, Letter =/= 127 ->
 	read_line(Rest, <<Line/binary, Letter>>).
+
+% ---
+
+transform_type(<<"#EXTINF">>) -> 'extinf';
+transform_type(<<"#EXTM3U">>) -> 'extm3u';
+transform_type(<<"#EXT-X-INDEPENDENT-SEGMENTS">>) -> 'ext-x-independent-segments';
+transform_type(<<"#EXT-X-MEDIA">>) -> 'ext-x-media';
+transform_type(<<"#EXT-X-MEDIA-SEQUENCE">>) -> 'ext-x-media-sequence';
+transform_type(<<"#EXT-X-PROGRAM-DATE-TIME">>) -> 'ext-x-program-date-time';
+transform_type(<<"#EXT-X-STREAM-INF">>) -> 'ext-x-stream-inf';
+transform_type(<<"#EXT-X-TARGETDURATION">>) -> 'ext-x-targetduration';
+transform_type(<<"#EXT-X-VERSION">>) -> 'ext-x-version';
+transform_type(Type) when is_binary(Type) -> Type.
+
+
+transform_entry('ext-x-stream-inf', <<"AUDIO">>, V) -> {audio, V};
+transform_entry('ext-x-stream-inf', <<"AVERAGE-BANDWIDTH">>, V) -> {'average-bandwidth', V};
+transform_entry('ext-x-stream-inf', <<"BANDWIDTH">>, V) -> {bandwith, binary_to_integer(V)};
+transform_entry('ext-x-stream-inf', <<"CODECS">>, V) -> {codecs, csv_list(V)};
+transform_entry('ext-x-stream-inf', <<"FRAME-RATE">>, V) -> {'frame-rate', binary_to_float(V)};
+transform_entry('ext-x-stream-inf', <<"RESOLUTION">>, V) -> {resolution, resolution_parser(V)};
+transform_entry('ext-x-stream-inf', <<"SUBTITLES">>, V) -> {subtitles, V};
+
+transform_entry('ext-x-media', <<"AUTOSELECT">>, V) -> {autoselect, yes_no(V)};
+transform_entry('ext-x-media', <<"DEFAULT">>, V) -> {autoselect, yes_no(V)};
+transform_entry('ext-x-media', <<"FORCED">>, V) -> {forced, yes_no(V)};
+transform_entry('ext-x-media', <<"GROUP-ID">>, V) -> {'group-id', V};
+transform_entry('ext-x-media', <<"LANGUAGE">>, V) -> {language, V};
+transform_entry('ext-x-media', <<"NAME">>, V) -> {name, V};
+transform_entry('ext-x-media', <<"TYPE">>, V) -> {type, media_type(V)};
+transform_entry('ext-x-media', <<"URI">>, V) -> {uri, V};
+
+transform_entry(_, K, V) when is_binary(K), is_binary(V) -> {K, V}.
+
+
+
+yes_no(<<"YES">>) -> yes;
+yes_no(<<"NO">>) -> no;
+yes_no(V) -> V.
+
+
+media_type(<<"AUDIO">>) -> audio;
+media_type(<<"SUBTITLES">>) -> subtitles;
+media_type(V) -> V.
+
+
+csv_list(V) -> string:split(V, <<",">>, all).
+
+
+resolution_parser(V) ->
+	lists:map(
+		fun binary_to_integer/1,
+		string:split(V, <<"x">>, all)
+	).
