@@ -34,13 +34,11 @@ parse(Bin, Acc) ->
 					parse(Rest, Acc);
 
 				<<"#EXT", _/binary>> ->
-					Entry = {_, _} = parse_ext_line(Line),
+					Entry = parse_ext_line(Line),
 					parse(Rest, [Entry | Acc]);
 
 				_ ->
-					[{LastId, LastMap} | LastAccRest] = Acc,
-					NewLastMap = maps:put(url, Line, LastMap),
-					parse(Rest, [{LastId, NewLastMap} | LastAccRest])
+					parse(Rest, [Line | Acc])
 			end;
 
 		eof ->
@@ -51,6 +49,8 @@ parse(Bin, Acc) ->
 
 parse_ext_line(Line = <<"#EXT", _/binary>>) ->
 	case get_type(Line) of
+		{type_only, Type} ->
+			Type;
 		{Type, Rest} ->
 			{Type, parse_csv(Type, Rest, #{})}
 	end.
@@ -58,8 +58,12 @@ parse_ext_line(Line = <<"#EXT", _/binary>>) ->
 % ---
 
 get_type(Line) ->
-	{Type, Rest} = get_type(Line, <<>>),
-	{transform_type(Type), Rest}.
+	case get_type(Line, <<>>) of
+		{Type, <<>>} ->
+			{type_only, transform_type(Type)};
+		{Type, Rest} ->
+			{transform_type(Type), Rest}
+	end.
 
 
 get_type(<<>>, Type) ->
@@ -77,10 +81,17 @@ parse_csv(_Type, <<>>, Map) ->
 	Map;
 
 parse_csv(Type, Bin, Map) ->
-	{ok, Key, <<Rest1/binary>>} = parse_csv_string(standard, $=, Bin, <<>>),
-	{ok, Value, <<Rest2/binary>>} = parse_csv_string(standard, $,, Rest1, <<>>),
-	{K, V} = transform_entry(Type, Key, Value),
-	parse_csv(Type, Rest2, maps:put(K, V, Map)).
+	case parse_csv_string(standard, $=, Bin, <<>>) of
+		{ok, Key, <<>>} ->
+			case maps:size(Map) of
+				0 -> Key;
+				_ -> maps:put(Key, undefined, Map)
+			end;
+		{ok, Key, <<Rest1/binary>>} ->
+			{ok, Value, <<Rest2/binary>>} = parse_csv_string(standard, $,, Rest1, <<>>),
+			{K, V} = transform_entry(Type, Key, Value),
+			parse_csv(Type, Rest2, maps:put(K, V, Map))
+	end.
 
 % ---
 
@@ -131,15 +142,15 @@ transform_type(Type) when is_binary(Type) -> Type.
 
 
 transform_entry('ext-x-stream-inf', <<"AUDIO">>, V) -> {audio, V};
-transform_entry('ext-x-stream-inf', <<"AVERAGE-BANDWIDTH">>, V) -> {'average-bandwidth', V};
-transform_entry('ext-x-stream-inf', <<"BANDWIDTH">>, V) -> {bandwith, binary_to_integer(V)};
+transform_entry('ext-x-stream-inf', <<"AVERAGE-BANDWIDTH">>, V) -> {'average-bandwidth', binary_to_integer(V)};
+transform_entry('ext-x-stream-inf', <<"BANDWIDTH">>, V) -> {bandwidth, binary_to_integer(V)};
 transform_entry('ext-x-stream-inf', <<"CODECS">>, V) -> {codecs, csv_list(V)};
 transform_entry('ext-x-stream-inf', <<"FRAME-RATE">>, V) -> {'frame-rate', binary_to_float(V)};
 transform_entry('ext-x-stream-inf', <<"RESOLUTION">>, V) -> {resolution, resolution_parser(V)};
 transform_entry('ext-x-stream-inf', <<"SUBTITLES">>, V) -> {subtitles, V};
 
 transform_entry('ext-x-media', <<"AUTOSELECT">>, V) -> {autoselect, yes_no(V)};
-transform_entry('ext-x-media', <<"DEFAULT">>, V) -> {autoselect, yes_no(V)};
+transform_entry('ext-x-media', <<"DEFAULT">>, V) -> {default, yes_no(V)};
 transform_entry('ext-x-media', <<"FORCED">>, V) -> {forced, yes_no(V)};
 transform_entry('ext-x-media', <<"GROUP-ID">>, V) -> {'group-id', V};
 transform_entry('ext-x-media', <<"LANGUAGE">>, V) -> {language, V};

@@ -38,9 +38,13 @@ end_per_testcase(_, _Config) ->
 % ---
 
 test1(_Config) ->
-	{Content, Expected} = master_file('3sat'),
-	{ok, Expected} = m3u8_parser:parse(Content).
-
+	lists:foreach(
+		fun(X) ->
+			{Content, Expected} = master_file(X),
+			Expected = m3u8_parser:parse(Content)
+		end,
+		['3sat', 'ARD-short']
+	).
 
 % ---
 
@@ -51,73 +55,123 @@ master_file('3sat') ->
 
 #EXT-X-STREAM-INF:CODECS=\"avc1.4d401f,mp4a.40.2\",BANDWIDTH=692095,AVERAGE-BANDWIDTH=578095,FRAME-RATE=25.000,RESOLUTION=480x272
 https://zdfhls18-i.akamaihd.net/hls/live/744751/dach/1/1.m3u8
-#EXT-X-STREAM-INF:CODECS=\"avc1.4d401f,mp4a.40.2\",BANDWIDTH=692095,AVERAGE-BANDWIDTH=578095,FRAME-RATE=25.000,RESOLUTION=480x272
-https://zdfhls18-i.akamaihd.net/hls/live/744751-b/dach/1/1.m3u8
 #EXT-X-STREAM-INF:CODECS=\"avc1.4d401f,mp4a.40.2\",BANDWIDTH=1088617,AVERAGE-BANDWIDTH=884617,FRAME-RATE=25.000,RESOLUTION=640x360
 https://zdfhls18-i.akamaihd.net/hls/live/744751/dach/2/2.m3u8
-#EXT-X-STREAM-INF:CODECS=\"avc1.4d401f,mp4a.40.2\",BANDWIDTH=1088617,AVERAGE-BANDWIDTH=884617,FRAME-RATE=25.000,RESOLUTION=640x360
-https://zdfhls18-i.akamaihd.net/hls/live/744751-b/dach/2/2.m3u8
-#EXT-X-STREAM-INF:CODECS=\"avc1.4d401f,mp4a.40.2\",BANDWIDTH=2040269,AVERAGE-BANDWIDTH=1620269,FRAME-RATE=25.000,RESOLUTION=852x480
-https://zdfhls18-i.akamaihd.net/hls/live/744751/dach/3/3.m3u8
 #EXT-X-STREAM-INF:CODECS=\"avc1.4d401f,mp4a.40.2\",BANDWIDTH=2040269,AVERAGE-BANDWIDTH=1620269,FRAME-RATE=25.000,RESOLUTION=852x480
 https://zdfhls18-i.akamaihd.net/hls/live/744751-b/dach/3/3.m3u8
 
 ">>,
 
 		[
-			#{
-				'ext-x-stream-inf' =>
+			'extm3u',
+
+			{
+				'ext-x-stream-inf',
 				#{
-					'average-bandwidth' => 578095,
+					codecs => [<<"avc1.4d401f">>, <<"mp4a.40.2">>],
 					bandwidth => 692095,
-					codecs => [<<"avc1.4d401f">>, <<"mp4a.40.2">>],
-					'frame-rate' => 25.0,
+					'average-bandwidth' => 578095,
+					'frame-rate' => 25.000,
 					resolution => [480, 272]
-				},
-				url => <<"https://zdfhls18-i.akamaihd.net/hls/live/744751/dach/1/1.m3u8">>
+				}
 			},
-			#{
-				'ext-x-stream-inf' =>
-				#{'average-bandwidth' => 578095, bandwidth => 692095,
-					codecs => [<<"avc1.4d401f">>, <<"mp4a.40.2">>],
-					'frame-rate' => 25.0,
-					resolution => [480, 272]},
-				url => <<"https://zdfhls18-i.akamaihd.net/hls/live/744751-b/dach/1/1.m3u8">>
-			},
-			#{
-				'ext-x-stream-inf' =>
+			<<"https://zdfhls18-i.akamaihd.net/hls/live/744751/dach/1/1.m3u8">>,
+
+			{'ext-x-stream-inf',
 				#{
-					'average-bandwidth' => 884617, bandwidth => 1088617,
 					codecs => [<<"avc1.4d401f">>, <<"mp4a.40.2">>],
-					'frame-rate' => 25.0,
+					bandwidth => 1088617,
+					'average-bandwidth' => 884617,
+					'frame-rate' => 25.000,
 					resolution => [640, 360]
-				},
-				url => <<"https://zdfhls18-i.akamaihd.net/hls/live/744751/dach/2/2.m3u8">>
+				}
 			},
-			#{
-				'ext-x-stream-inf' =>
+			<<"https://zdfhls18-i.akamaihd.net/hls/live/744751/dach/2/2.m3u8">>,
+
+			{'ext-x-stream-inf',
 				#{
-					'average-bandwidth' => 884617, bandwidth => 1088617,
 					codecs => [<<"avc1.4d401f">>, <<"mp4a.40.2">>],
-					'frame-rate' => 25.0,
-					resolution => [640, 360]
-				},
-				url => <<"https://zdfhls18-i.akamaihd.net/hls/live/744751-b/dach/2/2.m3u8">>},
-			#{'ext-x-stream-inf' =>
-			#{'average-bandwidth' => 1620269, bandwidth => 2040269,
-				codecs => [<<"avc1.4d401f">>, <<"mp4a.40.2">>],
-				'frame-rate' => 25.0,
-				resolution => [852, 480]},
-				url =>
-				<<"https://zdfhls18-i.akamaihd.net/hls/live/744751/dach/3/3.m3u8">>},
-			#{'ext-x-stream-inf' =>
-			#{'average-bandwidth' => 1620269, bandwidth => 2040269,
-				codecs => [<<"avc1.4d401f">>, <<"mp4a.40.2">>],
-				'frame-rate' => 25.0,
-				resolution => [852, 480]},
-				url =>
-				<<"https://zdfhls18-i.akamaihd.net/hls/live/744751-b/dach/3/3.m3u8">>}]
+					bandwidth => 2040269,
+					'average-bandwidth' => 1620269,
+					'frame-rate' => 25.000,
+					resolution => [852, 480]
+				}
+			},
+			<<"https://zdfhls18-i.akamaihd.net/hls/live/744751-b/dach/3/3.m3u8">>
+		]
 	};
+
+master_file('ARD-short') ->
+	{
+		<<"#EXTM3U
+#EXT-X-VERSION:4
+#EXT-X-INDEPENDENT-SEGMENTS
+#EXT-X-STREAM-INF:BANDWIDTH=1672000,AVERAGE-BANDWIDTH=1460800,VIDEO-RANGE=SDR,CODECS=\"avc1.4d401f,mp4a.40.2\",RESOLUTION=640x360,FRAME-RATE=50.000,AUDIO=\"program_audio\",SUBTITLES=\"subs\",HDCP-LEVEL=NONE
+master_640p_1200.m3u8
+#EXT-X-MEDIA:TYPE=AUDIO,LANGUAGE=\"de\",NAME=\"Deutsch\",AUTOSELECT=YES,DEFAULT=YES,GROUP-ID=\"program_audio\",URI=\"master_audio1_128.m3u8\"
+#EXT-X-MEDIA:TYPE=AUDIO,LANGUAGE=\"klare sprache\",NAME=\"Klare Sprache\",AUTOSELECT=NO,DEFAULT=NO,GROUP-ID=\"program_audio\",URI=\"master_audio2_KS_128.m3u8\"
+#EXT-X-MEDIA:TYPE=SUBTITLES,NAME=\"Untertitel\",DEFAULT=YES,AUTOSELECT=YES,FORCED=NO,LANGUAGE=\"de\",GROUP-ID=\"subs\",URI=\"master_subs_webvtt.m3u8\"
+">>,
+
+		[
+			extm3u,
+			{'ext-x-version', <<"4">>},
+			'ext-x-independent-segments',
+			{
+				'ext-x-stream-inf',
+				#{
+					bandwidth => 1672000,
+					'average-bandwidth' => 1460800,
+					<<"VIDEO-RANGE">> => <<"SDR">>,
+					codecs => [<<"avc1.4d401f">>, <<"mp4a.40.2">>],
+					resolution => [640, 360],
+					'frame-rate' => 50.0,
+					audio => <<"program_audio">>,
+					subtitles => <<"subs">>,
+					<<"HDCP-LEVEL">> => <<"NONE">>
+				}
+			},
+			<<"master_640p_1200.m3u8">>,
+			{
+				'ext-x-media',
+				#{
+					'type' => audio,
+					language => <<"de">>,
+					name => <<"Deutsch">>,
+					autoselect => yes,
+					default => yes,
+					'group-id' => <<"program_audio">>,
+					uri => <<"master_audio1_128.m3u8">>
+				}
+			},
+			{
+				'ext-x-media',
+				#{
+					'type' => audio,
+					language => <<"klare sprache">>,
+					name => <<"Klare Sprache">>,
+					autoselect => no,
+					default => no,
+					'group-id' => <<"program_audio">>,
+					uri => <<"master_audio2_KS_128.m3u8">>
+				}
+			},
+			{
+				'ext-x-media',
+				#{
+					type => subtitles,
+					name => <<"Untertitel">>,
+					default => yes,
+					autoselect => yes,
+					forced => no,
+					language => <<"de">>,
+					'group-id' => <<"subs">>,
+					uri => <<"master_subs_webvtt.m3u8">>
+				}
+			}
+		]
+	};
+
 
 master_file('ARD') ->
 	{
@@ -138,7 +192,8 @@ master_480p_700.m3u8
 #EXT-X-MEDIA:TYPE=AUDIO,LANGUAGE=\"klare sprache\",NAME=\"Klare Sprache\",AUTOSELECT=NO,DEFAULT=NO,GROUP-ID=\"program_audio\",URI=\"master_audio2_KS_128.m3u8\"
 #EXT-X-MEDIA:TYPE=SUBTITLES,NAME=\"Untertitel\",DEFAULT=YES,AUTOSELECT=YES,FORCED=NO,LANGUAGE=\"de\",GROUP-ID=\"subs\",URI=\"master_subs_webvtt.m3u8\"
 ">>,
-		[]
+		[
+		]
 	};
 
 master_file('ARTE.DE') ->
